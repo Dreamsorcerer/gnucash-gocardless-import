@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  merge_group:
+  push:
+    branches:
+      - 'master'
+  pull_request:
+
+permissions: {}
+jobs:
+  lint:
+    permissions:
+      contents: read # to fetch code (actions/checkout)
+
+    name: Mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Install gnucash
+      run: sudo apt install python3-gnucash -y
+    - name: Install dependencies
+      uses: py-actions/py-dependency-install@v4
+      with:
+        path: requirements.txt
+    - name: Run mypy
+      run: mypy gnucash_import.py --strict --ignore-missing-imports
