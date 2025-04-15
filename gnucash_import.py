@@ -21,7 +21,7 @@ DISABLE_LOGS = True
 REFRESH_TOKEN = ""
 ACCOUNTS = {
     Path.home() / "personal.gnucash": {
-        # AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): "Assets.Current Account",
+        AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): "Assets.Current Account",
     },
     Path.home() / "business.gnucash": {
     },
