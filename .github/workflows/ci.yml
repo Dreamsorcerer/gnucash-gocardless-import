@@ -25,5 +25,7 @@ jobs:
         python-version: 3.11
     - name: Install gnucash
       run: sudo apt install python3-gnucash -y
+    - name: Install aiohttp
+      run: pip install aiohttp
     - name: Run mypy
       run: mypy gnucash_import.py --strict
