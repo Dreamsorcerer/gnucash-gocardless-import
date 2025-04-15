@@ -16,7 +16,7 @@ from gnucash import Session, Transaction, Split, GncNumeric
 
 AccId = NewType("AccId", str)
 
-# These variables are user configurable:
+# These variables need to be configured:
 DISABLE_LOGS = True
 REFRESH_TOKEN = ""
 ACCOUNTS = {
