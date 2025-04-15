@@ -26,4 +26,4 @@ jobs:
       with:
         path: requirements.txt
     - name: Run mypy
-      run: mypy gnucash_import.py --strict --python-version=3.11 --ignore-missing-imports
+      run: mypy gnucash_import.py --strict --ignore-missing-imports
