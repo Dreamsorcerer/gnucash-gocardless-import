@@ -23,9 +23,13 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: 3.11
+        cache: 'pip'
+        cache-dependency-path: '**/requirements*.txt'
     - name: Install gnucash
       run: sudo apt install python3-gnucash -y
-    - name: Install aiohttp
-      run: pip install aiohttp
+    - name: Install dependencies
+      uses: py-actions/py-dependency-install@v4
+      with:
+        path: requirements.txt
     - name: Run mypy
       run: mypy gnucash_import.py --strict
