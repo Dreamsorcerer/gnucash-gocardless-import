@@ -15,7 +15,7 @@ Now you're ready to setup the script.
 Start by copying the gnucash_imports.py file somewhere you want to run it from.
 Make sure the file is executable: `chmod +x gnucash_import.py`
 
-From the command line, run `./gnucash_import.py -m token`.
+To start, run: `./gnucash_import.py -m token`
 
 Paste in the secrets created in the dashboard and you'll receive a refresh token.
 
@@ -23,7 +23,7 @@ Edit the gnucash_import.py file and paste the refresh token into the global vari
 
 ## Register an account
 
-To register a new bank account, run `./gnucash_import.py -m register`.
+To register a new bank account, run: `./gnucash_import.py -m register`
 
 After entering the country, you'll get a list of institutions. Find the one you want to add and copy/paste
 the institution's code.
@@ -33,8 +33,8 @@ Upon completion you'll be redirected to a localhost page that doesn't exist. Ret
 `y` to get the resulting list of account IDs.
 
 You'll now need to paste these account IDs into the `ACCOUNTS` global variable. You'll want to replace the
-example configuration that's already in the script. The sample one shows using 2 accouts files (named
-`personal.gnucash` and `business.gnucash` in the user's home directory), with 1 bank account in the file
+example configuration that's already in the script. The sample one shows using 2 accounts files (named
+`personal.gnucash` and `business.gnucash` in the user's home directory), with 1 bank account in the first file
 that maps to the `Assets.Current Account` account in GnuCash.
 
 > [!NOTE]  
@@ -57,10 +57,10 @@ marked as reconciled as long as the amounts still match correctly.
 > Because the script will reconcile transactions it sees for the second time, you should avoid running the
 > script twice in a row, as this will cause them to be reconciled without a chance for you to check them first.
 
-The script will also look for previous transactions to the same entity and reuse the same splits and description.
-This means the script should learn over time and reduce the amount of work needed to mark up all the
-transactions correctly in future.
+When creating a new transaction, the script will also look for previous transactions to the same entity
+and reuse the same splits and description. This means the script should learn over time and reduce the amount
+of work needed to mark up all the transactions correctly in future.
 
 At the end of the run, the script will also compare the balance in the accounts. If they fail to match, you'll
 get a warning asking you to perform a manual reconciliation. It will display the expected balance and the date
-which should be entered into the reconciliation window.
+which should both be entered into the reconciliation window.
