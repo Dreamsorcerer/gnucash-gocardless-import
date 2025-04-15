@@ -133,8 +133,6 @@ def _import_transactions(session: Session, accounts: dict[AccId, str], transacti
 
         for tx_data in transactions[acc_id]["booked"]:  # TODO: Include pending?
             tx_date = datetime.fromisoformat(tx_data["bookingDate"])
-            if tx_date < datetime(2025, 4, 6):
-                continue
 
             split = split_by_txid.get(tx_data["entryReference"])
             if split:
