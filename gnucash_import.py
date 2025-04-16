@@ -78,11 +78,12 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
         data = await resp.json()
     balances = {b["balanceType"]: b for b in data["balances"]}
     # The first balanceType we find in this list is likely the balance we want to know.
-    for k in ("expectedClosed", "interimBooked", "closingBooked", "openingBooked", "informational", "interimAvailable", "closingAvailable", "openingAvailable"):
+    for k in ("expectedClosed", "interimBooked", "closingBooked", "openingBooked", "information", "interimAvailable", "closingAvailable", "openingAvailable"):
         if k in balances:
             b = balances[k]
             balance = (float(b["balanceAmount"]["amount"]), datetime.fromisoformat(b["referenceDate"]))
             break
+    assert balance is not None, balances
 
     async with sess.get(API + f"accounts/{acc_id}/transactions/") as resp:
         if not resp.ok:
