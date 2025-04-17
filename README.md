@@ -1,6 +1,7 @@
 # Importing bank transactions into GnuCash
 
 This script can be used to automatically import transactions from UK (and a few other countries) bank accounts.
+The download_transactions() function could also be used directly if you don't use GnuCash and just want the data.
 
 ## Get API access
 
@@ -63,4 +64,5 @@ of work needed to mark up all the transactions correctly in future.
 
 At the end of the run, the script will also compare the balance in the accounts. If they fail to match, you'll
 get a warning asking you to perform a manual reconciliation. It will display the expected balance and the date
-which should both be entered into the reconciliation window.
+which should both be entered into the reconciliation window (note that for liability accounts, the balance
+may be negative, but should be entered as a positive value in GnuCash).
