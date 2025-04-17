@@ -22,6 +22,7 @@ DISABLE_LOGS = True
 REFRESH_TOKEN = ""
 ACCOUNTS: dict[Path, AccsConfig] = {
     Path.home() / "personal.gnucash": {
+        # Some institutions seem to swap bookingDate/valueDate.
         AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): ("Assets.Current Account", "bookingDate"),
     },
     Path.home() / "business.gnucash": {
