@@ -120,11 +120,11 @@ def _import_transactions(session: Session, accounts: dict[AccId, str], transacti
 
         # Build search index of transactions.
         gc_splits = gc_account.GetSplitList()
-        split_by_txid = {m.group(1): s for s in gc_splits if (m := re.search(r"TXID: (.+)", s.GetMemo()))}
+        split_by_txid = {m.group(1): s for s in gc_splits if (m := re.search(r"TXID: (.+?)(;|$)", s.GetMemo()))}
         gc_splits = [s for s in gc_splits if s not in split_by_txid.values()]
         splits_by_name: dict[str, list[Split]] = {}
         for split in split_by_txid.values():
-            m = re.search(r"TXNAME: (.+)", split.GetMemo())
+            m = re.search(r"TXNAME: (.+?)(;|$)", split.GetMemo())
             if m is None:
                 continue
             name = m.group(1)
@@ -156,8 +156,8 @@ def _import_transactions(session: Session, accounts: dict[AccId, str], transacti
                 split = min(candidates, key=lambda s: abs(s.parent.GetDate() - tx_date))
                 note = split.GetMemo()
                 if note:
-                    note += "\n"
-                note += f"TXID: {tx_data['entryReference']}\nTXNAME: {tx_data['remittanceInformationUnstructured']}"
+                    note += "; "
+                note += f"TXID: {tx_data['entryReference']}; TXNAME: {tx_data['remittanceInformationUnstructured']};"
                 split.SetMemo(note)
                 split.parent.SetDate(tx_date.day, tx_date.month, tx_date.year)
                 continue
@@ -171,7 +171,7 @@ def _import_transactions(session: Session, accounts: dict[AccId, str], transacti
             new_split.SetValue(GncNumeric(float(tx_data["transactionAmount"]["amount"])))
             new_split.SetAccount(gc_account)
             new_split.SetParent(tx)
-            new_split.SetMemo(f"TXID: {tx_data['entryReference']}\nTXNAME: {tx_data['remittanceInformationUnstructured']}")
+            new_split.SetMemo(f"TXID: {tx_data['entryReference']}; TXNAME: {tx_data['remittanceInformationUnstructured']};")
 
             desc = tx_data["remittanceInformationUnstructured"]
             prev_splits = splits_by_name.get(tx_data["remittanceInformationUnstructured"])
