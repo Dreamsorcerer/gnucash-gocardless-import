@@ -9,19 +9,21 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import NewType, TypedDict
+from typing import Literal, NewType, TypedDict
 
 from aiohttp import ClientSession
 from gnucash import Session, Transaction, Split, GncNumeric
 
 AccId = NewType("AccId", str)
+AccsConfig = dict[AccId, tuple[str, Literal["bookingDate", "valueDate"]]]
 
 # These variables need to be configured:
 DISABLE_LOGS = True
 REFRESH_TOKEN = ""
-ACCOUNTS = {
+ACCOUNTS: dict[Path, AccsConfig] = {
     Path.home() / "personal.gnucash": {
-        AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): "Assets.Current Account",
+        # Some institutions seem to swap bookingDate/valueDate.
+        AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): ("Assets.Current Account", "bookingDate"),
     },
     Path.home() / "business.gnucash": {
     },
@@ -52,6 +54,7 @@ class TransactionData(TypedDict):
     entryReference: str
     remittanceInformationUnstructured: str
     transactionAmount: _Amount
+    valueDate: str
 
 
 class TransactionsGroup(TypedDict):
@@ -77,6 +80,7 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
             raise RuntimeError()
         data = await resp.json()
     balances = {b["balanceType"]: b for b in data["balances"]}
+    balance = None
     # The first balanceType we find in this list is likely the balance we want to know.
     for k in ("expectedClosed", "interimBooked", "closingBooked", "openingBooked", "information", "interimAvailable", "closingAvailable", "openingAvailable"):
         if k in balances:
@@ -113,9 +117,9 @@ async def download_transactions() -> tuple[dict[AccId, tuple[float, datetime]], 
     return balances, transaction_data
 
 
-def _import_transactions(session: Session, accounts: dict[AccId, str], transactions: dict[AccId, TransactionsGroup]) -> None:
+def _import_transactions(session: Session, accounts: AccsConfig, transactions: dict[AccId, TransactionsGroup]) -> None:
     root = session.book.get_root_account()
-    for acc_id, acc_path in accounts.items():
+    for acc_id, (acc_path, date_key) in accounts.items():
         gc_account = root.lookup_by_full_name(acc_path)
 
         # Build search index of transactions.
@@ -133,7 +137,7 @@ def _import_transactions(session: Session, accounts: dict[AccId, str], transacti
             splits.sort(key=lambda s: s.parent.GetDate())
 
         for tx_data in transactions[acc_id]["booked"]:  # TODO: Include pending?
-            tx_date = datetime.fromisoformat(tx_data["bookingDate"])
+            tx_date = datetime.fromisoformat(tx_data[date_key])
 
             split = split_by_txid.get(tx_data["entryReference"])
             if split:

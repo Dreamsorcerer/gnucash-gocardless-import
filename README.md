@@ -36,14 +36,16 @@ Upon completion you'll be redirected to a localhost page that doesn't exist. Ret
 You'll now need to paste these account IDs into the `ACCOUNTS` global variable. You'll want to replace the
 example configuration that's already in the script. The sample one shows using 2 accounts files (named
 `personal.gnucash` and `business.gnucash` in the user's home directory), with 1 bank account in the first file
-that maps to the `Assets.Current Account` account in GnuCash.
+that maps to the `Assets.Current Account` account in GnuCash. Leave the `"bookingDate"` as the
+default. If you find that the transaction dates don't match the statement, then replace `bookingDate`
+with `valueDate`.
 
-> [!NOTE]  
+> [!NOTE]
 > Banks allow access for 90 days. Then you'll need to repeat the authorisation process again.
 
 ## Importing transactions
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
 > Banks have rather restrictive rate limits. I suggest avoiding running this script against live accounts
 > more than twice in any given day.
 
