@@ -201,19 +201,15 @@ async def import_transactions() -> None:
     balances, transactions = await download_transactions()
 
     for f, accounts in ACCOUNTS.items():
-        session = Session(str(f))
-        try:
+        with Session(str(f)) as session:
             _import_transactions(session, accounts, transactions)
-            session.save()
 
-            for acc_id, acc_path in accounts.items():
+            for acc_id, (acc_path, date_key) in accounts.items():
                 balance = balances[acc_id]
                 acc = session.book.get_root_account().lookup_by_full_name(acc_path)
                 if not math.isclose(acc.GetBalanceAsOfDate(balance[1]).to_double(), balance[0]):
                     print(f"{acc_path} balance out of sync, please reconcile.")
                     print(f"Expected: {balance[0]} ({balance[1].isoformat()})")
-        finally:
-            session.end()
 
 
 async def register_account() -> None:
