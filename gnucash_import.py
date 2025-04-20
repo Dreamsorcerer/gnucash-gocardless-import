@@ -51,7 +51,7 @@ class _Amount(TypedDict):
 
 class TransactionData(TypedDict):
     bookingDate: str
-    entryReference: str
+    internalTransactionId: str
     remittanceInformationUnstructured: str
     transactionAmount: _Amount
     valueDate: str
@@ -139,7 +139,7 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
         for tx_data in transactions[acc_id]["booked"]:  # TODO: Include pending?
             tx_date = datetime.fromisoformat(tx_data[date_key])
 
-            split = split_by_txid.get(tx_data["entryReference"])
+            split = split_by_txid.get(tx_data["internalTransactionId"])
             if split:
                 if not math.isclose(split.GetAmount().to_double(), float(tx_data["transactionAmount"]["amount"])):
                     print("ERROR: Can't reconcile due to incorrect amounts ({})".format(tx_data))
@@ -161,7 +161,7 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
                 note = split.GetMemo()
                 if note:
                     note += "; "
-                note += f"TXID: {tx_data['entryReference']}; TXNAME: {tx_data['remittanceInformationUnstructured']};"
+                note += f"TXID: {tx_data['internalTransactionId']}; TXNAME: {tx_data['remittanceInformationUnstructured']};"
                 split.SetMemo(note)
                 split.parent.SetDate(tx_date.day, tx_date.month, tx_date.year)
                 continue
@@ -175,7 +175,7 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
             new_split.SetValue(GncNumeric(float(tx_data["transactionAmount"]["amount"])))
             new_split.SetAccount(gc_account)
             new_split.SetParent(tx)
-            new_split.SetMemo(f"TXID: {tx_data['entryReference']}; TXNAME: {tx_data['remittanceInformationUnstructured']};")
+            new_split.SetMemo(f"TXID: {tx_data['internalTransactionId']}; TXNAME: {tx_data['remittanceInformationUnstructured']};")
 
             desc = tx_data["remittanceInformationUnstructured"]
             prev_splits = splits_by_name.get(tx_data["remittanceInformationUnstructured"])
