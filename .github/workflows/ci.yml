@@ -26,4 +26,6 @@ jobs:
       with:
         path: requirements.txt
     - name: Run mypy
-      run: mypy gnucash_import.py --strict --ignore-missing-imports
+      env:
+        MYPY_PATH: stubs/
+      run: mypy gnucash_import.py stubs/ --strict

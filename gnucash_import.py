@@ -139,12 +139,12 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
         for tx_data in transactions[acc_id]["booked"]:  # TODO: Include pending?
             tx_date = datetime.fromisoformat(tx_data[date_key])
 
-            split = split_by_txid.get(tx_data["internalTransactionId"])
-            if split:
-                if not math.isclose(split.GetAmount().to_double(), float(tx_data["transactionAmount"]["amount"])):
+            existing_split = split_by_txid.get(tx_data["internalTransactionId"])
+            if existing_split:
+                if not math.isclose(existing_split.GetAmount().to_double(), float(tx_data["transactionAmount"]["amount"])):
                     print("ERROR: Can't reconcile due to incorrect amounts ({})".format(tx_data))
                     continue
-                split.SetReconcile("y")
+                existing_split.SetReconcile("y")
                 continue
 
             # Search for existing transaction that matches.
