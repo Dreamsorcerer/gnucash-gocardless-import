@@ -72,7 +72,7 @@ async def refresh(sess: ClientSession) -> None:
     sess.headers["Authorization"] = f"Bearer {data['access']}"
 
 
-async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, tuple[float, datetime], TransactionsGroup]:
+async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
     async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
         if not resp.ok:
             print("Response status:", resp.status)
