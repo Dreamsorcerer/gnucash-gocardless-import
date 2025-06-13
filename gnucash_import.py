@@ -99,7 +99,7 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
     return acc_id, balance, transactions
 
 
-async def download_transactions() -> tuple[dict[AccId, tuple[float, datetime]], dict[AccId, TransactionsGroup]]:
+async def download_transactions() -> tuple[dict[AccId, float], dict[AccId, TransactionsGroup]]:
     async with ClientSession(headers=HEADERS) as sess:
         await refresh(sess)
 
