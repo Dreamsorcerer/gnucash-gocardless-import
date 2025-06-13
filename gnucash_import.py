@@ -72,7 +72,7 @@ async def refresh(sess: ClientSession) -> None:
     sess.headers["Authorization"] = f"Bearer {data['access']}"
 
 
-async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, tuple[float, datetime], TransactionsGroup]:
+async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
     async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
         if not resp.ok:
             print("Response status:", resp.status)
@@ -84,8 +84,7 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
     # The first balanceType we find in this list is likely the balance we want to know.
     for k in ("expectedClosed", "interimBooked", "closingBooked", "openingBooked", "information", "interimAvailable", "closingAvailable", "openingAvailable"):
         if k in balances:
-            b = balances[k]
-            balance = (float(b["balanceAmount"]["amount"]), datetime.fromisoformat(b["referenceDate"]))
+            balance = float(balances[k]["balanceAmount"]["amount"])
             break
     assert balance is not None, balances
 
@@ -100,7 +99,7 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
     return acc_id, balance, transactions
 
 
-async def download_transactions() -> tuple[dict[AccId, tuple[float, datetime]], dict[AccId, TransactionsGroup]]:
+async def download_transactions() -> tuple[dict[AccId, float], dict[AccId, TransactionsGroup]]:
     async with ClientSession(headers=HEADERS) as sess:
         await refresh(sess)
 
@@ -205,11 +204,11 @@ async def import_transactions() -> None:
             _import_transactions(session, accounts, transactions)
 
             for acc_id, (acc_path, date_key) in accounts.items():
-                balance = balances[acc_id]
+                amount = balances[acc_id]
                 acc = session.book.get_root_account().lookup_by_full_name(acc_path)
-                if not math.isclose(acc.GetBalanceAsOfDate(balance[1]).to_double(), balance[0]):
+                if not math.isclose(acc.GetBalance().to_double(), amount):
                     print(f"{acc_path} balance out of sync, please reconcile.")
-                    print(f"Expected: {balance[0]} ({balance[1].isoformat()})")
+                    print(f"Expected: {amount}")
 
 
 async def register_account() -> None:
