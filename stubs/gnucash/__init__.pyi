@@ -17,7 +17,7 @@ class GncCommodityTable:
         ...
 
 class Account:
-    def GetBalanceAsOfDate(self, d: datetime) -> GncNumeric:
+    def GetBalance(self) -> GncNumeric:
         ...
 
     def GetSplitList(self) -> list[Split]:
