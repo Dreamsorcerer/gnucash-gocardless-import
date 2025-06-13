@@ -65,6 +65,6 @@ and reuse the same splits and description. This means the script should learn ov
 of work needed to mark up all the transactions correctly in future.
 
 At the end of the run, the script will also compare the balance in the accounts. If they fail to match, you'll
-get a warning asking you to perform a manual reconciliation. It will display the expected balance and the date
-which should both be entered into the reconciliation window (note that for liability accounts, the balance
+get a warning asking you to perform a manual reconciliation. It will display the expected balance
+which should be entered into the reconciliation window (note that for liability accounts, the balance
 may be negative, but should be entered as a positive value in GnuCash).
