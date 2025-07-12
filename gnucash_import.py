@@ -312,7 +312,7 @@ async def main() -> None:
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     args = parser.parse_args()
 
-    f_map: dict[Mode, Callable[[ClientSession], None] = {
+    f_map: dict[Mode, Callable[[ClientSession], None]] = {
         Mode.register: register_account,
         Mode.token: fetch_token,
         Mode.transactions: import_transactions,
