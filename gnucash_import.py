@@ -6,6 +6,7 @@ import json
 import math
 import os
 import re
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
@@ -311,11 +312,14 @@ async def main() -> None:
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     args = parser.parse_args()
 
-    f = {Mode.transactions: import_transactions, Mode.register: register_account,
-         Mode.token: fetch_token}[args.mode]
+    f_map: dict[Mode, Callable[[ClientSession], None] = {
+        Mode.register: register_account,
+        Mode.token: fetch_token,
+        Mode.transactions: import_transactions,
+    }
     headers = {"Accept": "application/json"}
     async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API
-        await f(sess)
+        await f_map[args.mode](sess)
 
 
 if __name__ == "__main__":
