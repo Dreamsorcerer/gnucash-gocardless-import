@@ -273,7 +273,7 @@ async def register_account(sess: ClientSession) -> None:
                 selection = int(input("> "))
 
         if selection == 0:
-            file_path = input("Enter file path: ")
+            file_path = input("Enter file path (e.g. ~/personal.gnucash): ")
         else:
             file_path = file_paths[selection - 1]
 
