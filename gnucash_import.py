@@ -31,7 +31,6 @@ ACCOUNTS: dict[Path, AccsConfig] = {
 
 
 API = "https://bankaccountdata.gocardless.com/api/v2/"
-HEADERS = MappingProxyType({"Accept": "application/json"})
 
 if DISABLE_LOGS:
     # Log files don't seem to respect user preferences.
@@ -99,20 +98,19 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
     return acc_id, balance, transactions
 
 
-async def download_transactions() -> tuple[dict[AccId, float], dict[AccId, TransactionsGroup]]:
-    async with ClientSession(headers=HEADERS) as sess:
-        await refresh(sess)
+async def download_transactions(sess: ClientSession) -> tuple[dict[AccId, float], dict[AccId, TransactionsGroup]]:
+    await refresh(sess)
 
-        tasks = []
-        for f, accounts in ACCOUNTS.items():
-            for acc_id in accounts:
-                tasks.append(_download_account(sess, acc_id))
+    tasks = []
+    for f, accounts in ACCOUNTS.items():
+        for acc_id in accounts:
+            tasks.append(_download_account(sess, acc_id))
 
-        balances = {}
-        transaction_data = {}
-        for acc_id, balance, transactions in await asyncio.gather(*tasks):
-            balances[acc_id] = balance
-            transaction_data[acc_id] = transactions
+    balances = {}
+    transaction_data = {}
+    for acc_id, balance, transactions in await asyncio.gather(*tasks):
+        balances[acc_id] = balance
+        transaction_data[acc_id] = transactions
     return balances, transaction_data
 
 
@@ -196,8 +194,8 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
             tx.CommitEdit()
 
 
-async def import_transactions() -> None:
-    balances, transactions = await download_transactions()
+async def import_transactions(sess: ClientSession) -> None:
+    balances, transactions = await download_transactions(sess)
 
     for f, accounts in ACCOUNTS.items():
         with Session(str(f)) as session:
@@ -211,70 +209,74 @@ async def import_transactions() -> None:
                     print(f"Expected: {amount}")
 
 
-async def register_account() -> None:
+async def register_account(sess: ClientSession) -> None:
     country = ""
     while len(country) != 2:
         country = input("Country code (default: GB): ") or "GB"
 
-    async with ClientSession(headers=HEADERS) as sess:
-        await refresh(sess)
+    await refresh(sess)
 
-        async with sess.get(API + "institutions/", params={"country": country}) as resp:
-            if not resp.ok:
-                print("Response status:", resp.status)
-                print(await resp.text())
-                raise RuntimeError()
-            data = await resp.json()
-            for b in data:
-                print(f"{b['id']}: {b['name']}")
+    async with sess.get(API + "institutions/", params={"country": country}) as resp:
+        if not resp.ok:
+            print("Response status:", resp.status)
+            print(await resp.text())
+            raise RuntimeError()
+        data = await resp.json()
+        for b in data:
+            print(f"{b['id']}: {b['name']}")
 
-        inst_id = input("Institution ID: ")
-        r = {"redirect": "http://localhost/success", "institution_id": inst_id}
-        async with sess.post(API + "requisitions/", json=r) as resp:
-            if not resp.ok:
-                print("Response status:", resp.status)
-                print(await resp.text())
-                raise RuntimeError()
-            data = await resp.json()
-            req_id = data["id"]
-            print("Navigate to:", data["link"])
+    inst_id = input("Institution ID: ")
+    r = {"redirect": "http://localhost/success", "institution_id": inst_id}
+    async with sess.post(API + "requisitions/", json=r) as resp:
+        if not resp.ok:
+            print("Response status:", resp.status)
+            print(await resp.text())
+            raise RuntimeError()
+        data = await resp.json()
+        req_id = data["id"]
+        print("Navigate to:", data["link"])
 
-        y = ""
-        while y.lower().strip() != "y":
-            y = input("Enter 'y' when complete: ")
+    y = ""
+    while y.lower().strip() != "y":
+        y = input("Enter 'y' when complete: ")
 
-        async with sess.get(API + "requisitions/" + req_id + "/") as resp:
-            if not resp.ok:
-                print("Response status:", resp.status)
-                print(await resp.text())
-                raise RuntimeError()
-            data = await resp.json()
-            print("Account IDs (Add these to the ACCOUNTS global):")
-            for acc_id in data["accounts"]:
-                print(acc_id)
+    async with sess.get(API + "requisitions/" + req_id + "/") as resp:
+        if not resp.ok:
+            print("Response status:", resp.status)
+            print(await resp.text())
+            raise RuntimeError()
+        data = await resp.json()
+        print("Account IDs (Add these to the ACCOUNTS global):")
+        for acc_id in data["accounts"]:
+            print(acc_id)
 
 
-async def fetch_token() -> None:
+async def fetch_token(sess: ClientSession) -> None:
     secret_id = input("Secret ID: ")
     secret_key = input("Secret Key: ")
     data = {"secret_id": secret_id, "secret_key": secret_key}
 
-    async with ClientSession() as sess:
-        async with sess.post(API + "token/new/", headers=HEADERS, json=data) as resp:
-            if resp.ok:
-                d = await resp.json()
-                print("Set the global in the code:")
-                print(f'REFRESH_TOKEN = "{d["refresh"]}"')
-            else:
-                print("Status:", resp.status)
-                print(await resp.text())
+    async with sess.post(API + "token/new/", json=data) as resp:
+        if resp.ok:
+            d = await resp.json()
+            print("Set the global in the code:")
+            print(f'REFRESH_TOKEN = "{d["refresh"]}"')
+        else:
+            print("Status:", resp.status)
+            print(await resp.text())
 
 
-if __name__ == "__main__":
+async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     args = parser.parse_args()
 
     f = {Mode.transactions: import_transactions, Mode.register: register_account,
          Mode.token: fetch_token}[args.mode]
-    asyncio.run(f())
+    headers = {"Accept": "application/json"}
+    async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API
+        await f(sess)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
