@@ -18,9 +18,8 @@ Make sure the file is executable: `chmod +x gnucash_import.py`
 
 To start, run: `./gnucash_import.py -m token`
 
-Paste in the secrets created in the dashboard and you'll receive a refresh token.
-
-Edit the gnucash_import.py file and paste the refresh token into the global variable near the top of the file.
+Paste in the secrets created in the dashboard.
+A refresh token will then be retrieved and saved in the config file.
 
 ## Register an account
 
@@ -31,14 +30,9 @@ the institution's code.
 
 You'll then be given a URL to navigate to in a browser in order to complete the authorisation with your account.
 Upon completion you'll be redirected to a localhost page that doesn't exist. Return to the script and enter
-`y` to get the resulting list of account IDs.
+`y` to complete the account setup.
 
-You'll now need to paste these account IDs into the `ACCOUNTS` global variable. You'll want to replace the
-example configuration that's already in the script. The sample one shows using 2 accounts files (named
-`personal.gnucash` and `business.gnucash` in the user's home directory), with 1 bank account in the first file
-that maps to the `Assets.Current Account` account in GnuCash. Leave the `"bookingDate"` as the
-default. If you find that the transaction dates don't match the statement, then replace `bookingDate`
-with `valueDate`.
+Follow the instructions to specify the GnuCash file and account name that transactions should be imported into.
 
 > [!NOTE]
 > Banks allow access for 90 days. Then you'll need to repeat the authorisation process again.
@@ -68,3 +62,12 @@ At the end of the run, the script will also compare the balance in the accounts.
 get a warning asking you to perform a manual reconciliation. It will display the expected balance
 which should be entered into the reconciliation window (note that for liability accounts, the balance
 may be negative, but should be entered as a positive value in GnuCash).
+
+## Config file
+
+After fetching the refresh token a config file will have been created in the user's config directory
+(e.g. `~/.config/gnucash-import). If needed, this can be manually edited to fix any config issues with
+accounts, delete accounts etc.
+
+If you find that the transaction dates for an account don't match your statement, then replace `bookingDate`
+with `valueDate` for that account.
