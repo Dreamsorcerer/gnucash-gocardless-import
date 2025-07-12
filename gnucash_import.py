@@ -91,7 +91,7 @@ async def _reconfirm_eua(sess: ClientSession, eua_id: str) -> None:
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
-    print("Account agreement needs renewing:", data["redirect"])
+    print("Account connection needs renewing:", data["redirect"])
 
     y = ""
     while y.lower().strip() != "y":
