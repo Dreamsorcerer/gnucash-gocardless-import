@@ -6,7 +6,7 @@ import json
 import math
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
@@ -312,7 +312,7 @@ async def main() -> None:
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     args = parser.parse_args()
 
-    f_map: dict[Mode, Callable[[ClientSession], None]] = {
+    f_map: dict[Mode, Callable[[ClientSession], Awaitable[None]]] = {
         Mode.register: register_account,
         Mode.token: fetch_token,
         Mode.transactions: import_transactions,
