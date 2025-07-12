@@ -19,6 +19,10 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+    - name: Disable man-db to speed up apt
+      run: |
+        echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
+        sudo dpkg-reconfigure man-db
     - name: Install apt dependencies
       run: sudo apt update && sudo apt install -y libcairo2-dev libgirepository1.0-dev python3-gnucash
     - name: Install dependencies
