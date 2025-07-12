@@ -37,7 +37,7 @@ class Config(TypedDict, total=False):
 
 API = "https://bankaccountdata.gocardless.com/api/v2/"
 CONFIG_PATH = config_dir / "gnucash-import"
-CONFIG: Config = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
+CONFIG: Config = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else Config()
 DISABLE_LOGS = True
 UUID_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
