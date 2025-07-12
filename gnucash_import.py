@@ -90,7 +90,6 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
-
     balances = {b["balanceType"]: b for b in data["balances"]}
     balance = None
     # The first balanceType we find in this list is likely the balance we want to know.
