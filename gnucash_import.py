@@ -84,13 +84,37 @@ async def refresh(sess: ClientSession) -> None:
     sess.headers["Authorization"] = f"Bearer {data['access']}"
 
 
-async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
-    async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
+async def _reconfirm_eua(sess: ClientSession, eua_id: str) -> None:
+    async with sess.post(API + f"agreements/enduser/{eua_id}/reconfirm") as resp:
         if not resp.ok:
             print("Response status:", resp.status)
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
+    print("Account agreement needs renewing:", data["redirect"])
+
+    y = ""
+    while y.lower().strip() != "y":
+        y = input("Enter 'y' when complete: ")
+
+
+async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
+    for retry in range(2):
+        async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
+            if retry == 0 and resp.status == 401:
+                error = await resp.json()
+                eua_id = re.search(UUID_RE, error.get("summary", ""))
+                if eua_id:
+                    await _reconfirm_eua(sess, eua_id.group(0))
+                    continue
+
+            if not resp.ok:
+                print("Response status:", resp.status)
+                print(await resp.text())
+                raise RuntimeError()
+            data = await resp.json()
+            break
+
     balances = {b["balanceType"]: b for b in data["balances"]}
     balance = None
     # The first balanceType we find in this list is likely the balance we want to know.
