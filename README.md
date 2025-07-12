@@ -66,7 +66,7 @@ may be negative, but should be entered as a positive value in GnuCash).
 ## Config file
 
 After fetching the refresh token a config file will have been created in the user's config directory
-(e.g. `~/.config/gnucash-import). If needed, this can be manually edited to fix any config issues with
+(e.g. `~/.config/gnucash-import`). If needed, this can be manually edited to fix any config issues with
 accounts, delete accounts etc.
 
 If you find that the transaction dates for an account don't match your statement, then replace `bookingDate`
