@@ -269,7 +269,7 @@ async def register_account(sess: ClientSession) -> None:
         selection = -1
         while selection < 0 or selection > len(file_paths):
             with suppress(ValueError):
-                selection = int(input())
+                selection = int(input("> "))
 
         if selection == 0:
             file_path = input("Enter file path: ")
