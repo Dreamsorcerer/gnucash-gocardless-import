@@ -2,9 +2,12 @@
 
 import argparse
 import asyncio
+import json
 import math
 import os
 import re
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -14,23 +17,30 @@ from typing import Literal, NewType, TypedDict
 from aiohttp import ClientSession
 from gnucash import Session, Transaction, Split, GncNumeric
 
+try:
+    from gi.repository import GLib
+except ImportError:
+    import os
+    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+else:
+    config_dir = Path(GLib.get_user_config_dir())
+
 AccId = NewType("AccId", str)
 AccsConfig = dict[AccId, tuple[str, Literal["bookingDate", "valueDate"]]]
 
-# These variables need to be configured:
-DISABLE_LOGS = True
-REFRESH_TOKEN = ""
-ACCOUNTS: dict[Path, AccsConfig] = {
-    Path.home() / "personal.gnucash": {
-        # Some institutions seem to swap bookingDate/valueDate.
-        AccId("5328e9d3-84dc-413b-8e51-b7d240075cd8"): ("Assets.Current Account", "bookingDate"),
-    },
-    Path.home() / "business.gnucash": {
-    },
-}
+
+class Config(TypedDict, total=False):
+    secret_id: str
+    secret_key: str
+    token: str
+    accounts: dict[str, AccsConfig]
 
 
 API = "https://bankaccountdata.gocardless.com/api/v2/"
+CONFIG_PATH = config_dir / "gnucash-import"
+CONFIG: Config = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else Config()
+DISABLE_LOGS = True
+UUID_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 if DISABLE_LOGS:
     # Log files don't seem to respect user preferences.
@@ -62,7 +72,10 @@ class TransactionsGroup(TypedDict):
 
 
 async def refresh(sess: ClientSession) -> None:
-    async with sess.post(API + "token/refresh/", json={"refresh": REFRESH_TOKEN}) as resp:
+    async with sess.post(API + "token/refresh/", json={"refresh": CONFIG["token"]}) as resp:
+        if resp.status == 401:
+            await fetch_token(sess, interactive=False)
+            return
         if not resp.ok:
             print("Response status:", resp.status)
             print(await resp.text())
@@ -102,7 +115,7 @@ async def download_transactions(sess: ClientSession) -> tuple[dict[AccId, float]
     await refresh(sess)
 
     tasks = []
-    for f, accounts in ACCOUNTS.items():
+    for f, accounts in CONFIG["accounts"].items():
         for acc_id in accounts:
             tasks.append(_download_account(sess, acc_id))
 
@@ -133,7 +146,7 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
         for splits in splits_by_name.values():
             splits.sort(key=lambda s: s.parent.GetDate())
 
-        for tx_data in transactions[acc_id]["booked"]:  # TODO: Include pending?
+        for tx_data in transactions[acc_id]["booked"]:
             tx_date = datetime.fromisoformat(tx_data[date_key])
 
             existing_split = split_by_txid.get(tx_data["internalTransactionId"])
@@ -197,8 +210,8 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
 async def import_transactions(sess: ClientSession) -> None:
     balances, transactions = await download_transactions(sess)
 
-    for f, accounts in ACCOUNTS.items():
-        with Session(str(f)) as session:
+    for f, accounts in CONFIG["accounts"].items():
+        with Session(str(Path(f).expanduser())) as session:
             _import_transactions(session, accounts, transactions)
 
             for acc_id, (acc_path, date_key) in accounts.items():
@@ -246,21 +259,49 @@ async def register_account(sess: ClientSession) -> None:
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
-        print("Account IDs (Add these to the ACCOUNTS global):")
-        for acc_id in data["accounts"]:
-            print(acc_id)
+
+    for acc_id in data["accounts"]:
+        file_paths = tuple(CONFIG.get("accounts", {}).keys())
+        print()
+        print("Select gnucash file for {}:".format(acc_id))
+        for i, p in enumerate(file_paths, 1):
+            print(" {} - {}".format(i, p))
+        print(" 0 - Enter new path")
+        selection = -1
+        while selection < 0 or selection > len(file_paths):
+            with suppress(ValueError):
+                selection = int(input("> "))
+
+        if selection == 0:
+            file_path = input("Enter file path (e.g. ~/personal.gnucash): ")
+        else:
+            file_path = file_paths[selection - 1]
+
+        account = input("Enter GNUCash account (e.g. Assets.Current Account): ")
+
+        CONFIG.setdefault("accounts", {}).setdefault(file_path, {})[acc_id] = (account, "bookingDate")
+    CONFIG_PATH.write_text(json.dumps(CONFIG, sort_keys=True, indent=4))
 
 
-async def fetch_token(sess: ClientSession) -> None:
-    secret_id = input("Secret ID: ")
-    secret_key = input("Secret Key: ")
+async def fetch_token(sess: ClientSession, interactive: bool = True) -> None:
+    if interactive:
+        msg = " ({})".format(CONFIG["secret_id"]) if "secret_id" in CONFIG else ""
+        secret_id = input(f"Secret ID{msg}: ") or CONFIG["secret_id"]
+        msg = " ({})".format(CONFIG["secret_key"]) if "secret_key" in CONFIG else ""
+        secret_key = input(f"Secret Key{msg}: ") or CONFIG["secret_key"]
+    else:
+        secret_id = CONFIG["secret_id"]
+        secret_key = CONFIG["secret_key"]
     data = {"secret_id": secret_id, "secret_key": secret_key}
 
     async with sess.post(API + "token/new/", json=data) as resp:
         if resp.ok:
             d = await resp.json()
-            print("Set the global in the code:")
-            print(f'REFRESH_TOKEN = "{d["refresh"]}"')
+            CONFIG["secret_id"] = secret_id
+            CONFIG["secret_key"] = secret_key
+            CONFIG["token"] = d["refresh"]
+            CONFIG_PATH.write_text(json.dumps(CONFIG, sort_keys=True, indent=4))
+            sess.headers["Authorization"] = f"Bearer {d['access']}"
         else:
             print("Status:", resp.status)
             print(await resp.text())
@@ -271,11 +312,14 @@ async def main() -> None:
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     args = parser.parse_args()
 
-    f = {Mode.transactions: import_transactions, Mode.register: register_account,
-         Mode.token: fetch_token}[args.mode]
+    f_map: dict[Mode, Callable[[ClientSession], Awaitable[None]]] = {
+        Mode.register: register_account,
+        Mode.token: fetch_token,
+        Mode.transactions: import_transactions,
+    }
     headers = {"Accept": "application/json"}
     async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API
-        await f(sess)
+        await f_map[args.mode](sess)
 
 
 if __name__ == "__main__":
