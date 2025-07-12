@@ -256,7 +256,7 @@ async def fetch_token(sess: ClientSession) -> None:
     secret_key = input("Secret Key: ")
     data = {"secret_id": secret_id, "secret_key": secret_key}
 
-    async with sess.post(API + "token/new/", headers=HEADERS, json=data) as resp:
+    async with sess.post(API + "token/new/", json=data) as resp:
         if resp.ok:
             d = await resp.json()
             print("Set the global in the code:")
