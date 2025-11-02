@@ -26,14 +26,20 @@ else:
     config_dir = Path(GLib.get_user_config_dir())
 
 AccId = NewType("AccId", str)
-AccsConfig = dict[AccId, tuple[str, Literal["bookingDate", "valueDate"]]]
+
+
+class AccountData(TypedDict):
+    gc_account: str
+    date_key: Literal["bookingDate", "valueDate"]
+    iban: str
+    inst: str
 
 
 class Config(TypedDict, total=False):
     secret_id: str
     secret_key: str
     token: str
-    accounts: dict[str, AccsConfig]
+    accounts: dict[str, dict[AccId, AccountData]]
 
 
 API = "https://bankaccountdata.gocardless.com/api/v2/"
@@ -84,13 +90,37 @@ async def refresh(sess: ClientSession) -> None:
     sess.headers["Authorization"] = f"Bearer {data['access']}"
 
 
-async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
-    async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
+async def _reconfirm_account(sess: ClientSession, eua_id: str) -> None:
+    async with sess.post(API + f"agreements/enduser/{eua_id}/reconfirm/") as resp:
         if not resp.ok:
             print("Response status:", resp.status)
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
+    print("Account connection needs renewing:", data["reconfirmation_url"])
+
+    y = ""
+    while y.lower().strip() != "y":
+        y = input("Enter 'y' when complete: ")
+
+
+async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
+    for retry in range(2):
+        async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
+            if retry == 0 and resp.status == 401:
+                error = await resp.json()
+                eua_id = re.search(UUID_RE, error.get("summary", ""))
+                if eua_id:
+                    await _reconfirm_account(sess, eua_id.group(0))
+                    continue
+
+            if not resp.ok:
+                print("Response status:", resp.status)
+                print(await resp.text())
+                raise RuntimeError()
+            data = await resp.json()
+            break
+
     balances = {b["balanceType"]: b for b in data["balances"]}
     balance = None
     # The first balanceType we find in this list is likely the balance we want to know.
@@ -127,10 +157,12 @@ async def download_transactions(sess: ClientSession) -> tuple[dict[AccId, float]
     return balances, transaction_data
 
 
-def _import_transactions(session: Session, accounts: AccsConfig, transactions: dict[AccId, TransactionsGroup]) -> None:
+def _import_transactions(session: Session, accounts: dict[AccId, AccountData], transactions: dict[AccId, TransactionsGroup]) -> None:
     root = session.book.get_root_account()
-    for acc_id, (acc_path, date_key) in accounts.items():
-        gc_account = root.lookup_by_full_name(acc_path)
+    for acc_id, acc in accounts.items():
+        gc_account = root.lookup_by_full_name(acc["gc_account"])
+        if gc_account is None:
+            raise RuntimeError(f"Account name not found: {gc_account}")
 
         # Build search index of transactions.
         gc_splits = gc_account.GetSplitList()
@@ -147,7 +179,8 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
             splits.sort(key=lambda s: s.parent.GetDate())
 
         for tx_data in transactions[acc_id]["booked"]:
-            tx_date = datetime.fromisoformat(tx_data[date_key])
+            desc = tx_data["remittanceInformationUnstructured"]
+            tx_date = datetime.fromisoformat(tx_data[acc["date_key"]])
 
             existing_split = split_by_txid.get(tx_data["internalTransactionId"])
             if existing_split:
@@ -171,7 +204,8 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
                 note = split.GetMemo()
                 if note:
                     note += "; "
-                note += f"TXID: {tx_data['internalTransactionId']}; TXNAME: {tx_data['remittanceInformationUnstructured']};"
+
+                note += f"TXID: {tx_data['internalTransactionId']}; TXNAME: {desc};"
                 split.SetMemo(note)
                 split.parent.SetDate(tx_date.day, tx_date.month, tx_date.year)
                 continue
@@ -179,15 +213,15 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
             # Create new transaction.
             tx = Transaction(session.book)
             tx.BeginEdit()
+            tx.SetDate(tx_date.day, tx_date.month, tx_date.year)
             tx.SetCurrency(session.book.get_table().lookup("CURRENCY", tx_data["transactionAmount"]["currency"]))
 
             new_split = Split(session.book)
             new_split.SetValue(GncNumeric(float(tx_data["transactionAmount"]["amount"])))
             new_split.SetAccount(gc_account)
             new_split.SetParent(tx)
-            new_split.SetMemo(f"TXID: {tx_data['internalTransactionId']}; TXNAME: {tx_data['remittanceInformationUnstructured']};")
+            new_split.SetMemo(f"TXID: {tx_data['internalTransactionId']}; TXNAME: {desc};")
 
-            desc = tx_data["remittanceInformationUnstructured"]
             prev_splits = splits_by_name.get(tx_data["remittanceInformationUnstructured"])
             if prev_splits:
                 prev_split = prev_splits[-1]
@@ -202,7 +236,6 @@ def _import_transactions(session: Session, accounts: AccsConfig, transactions: d
                     new_split.SetAccount(other_split.GetAccount())
                     new_split.SetParent(tx)
 
-            tx.SetDate(tx_date.day, tx_date.month, tx_date.year)
             tx.SetDescription(desc)
             tx.CommitEdit()
 
@@ -214,11 +247,12 @@ async def import_transactions(sess: ClientSession) -> None:
         with Session(str(Path(f).expanduser())) as session:
             _import_transactions(session, accounts, transactions)
 
-            for acc_id, (acc_path, date_key) in accounts.items():
+            for acc_id, acc in accounts.items():
                 amount = balances[acc_id]
-                acc = session.book.get_root_account().lookup_by_full_name(acc_path)
-                if not math.isclose(acc.GetBalance().to_double(), amount):
-                    print(f"{acc_path} balance out of sync, please reconcile.")
+                gc_acc = session.book.get_root_account().lookup_by_full_name(acc["gc_account"])
+                assert gc_acc is not None
+                if not math.isclose(gc_acc.GetBalance().to_double(), amount):
+                    print(f"{acc['gc_account']} balance out of sync, please reconcile.")
                     print(f"Expected: {amount}")
 
 
@@ -239,7 +273,17 @@ async def register_account(sess: ClientSession) -> None:
             print(f"{b['id']}: {b['name']}")
 
     inst_id = input("Institution ID: ")
-    r = {"redirect": "http://localhost/success", "institution_id": inst_id}
+    r = {"access_valid_for_days": "730", "institution_id": inst_id, "reconfirmation": True}
+    async with sess.post(API + "agreements/enduser/", json=r) as resp:
+        if not resp.ok:
+            print("Response status:", resp.status)
+            print(await resp.text())
+            raise RuntimeError()
+        data = await resp.json()
+        eua_id = data["id"]
+
+    r = {"agreement": eua_id, "redirect": "http://localhost/success",
+         "institution_id": inst_id}
     async with sess.post(API + "requisitions/", json=r) as resp:
         if not resp.ok:
             print("Response status:", resp.status)
@@ -261,25 +305,49 @@ async def register_account(sess: ClientSession) -> None:
         data = await resp.json()
 
     for acc_id in data["accounts"]:
-        file_paths = tuple(CONFIG.get("accounts", {}).keys())
-        print()
-        print("Select gnucash file for {}:".format(acc_id))
-        for i, p in enumerate(file_paths, 1):
-            print(" {} - {}".format(i, p))
-        print(" 0 - Enter new path")
-        selection = -1
-        while selection < 0 or selection > len(file_paths):
-            with suppress(ValueError):
-                selection = int(input("> "))
+        async with sess.get(API + f"accounts/{acc_id}") as resp:
+            if not resp.ok:
+                print("Response status:", resp.status)
+                print(await resp.text())
+                raise RuntimeError()
+            account_summary = await resp.json()
+        iban = account_summary["iban"]
+        inst = account_summary["institution_id"]
 
-        if selection == 0:
-            file_path = input("Enter file path (e.g. ~/personal.gnucash): ")
+        try:
+            file_path, old_acc_id = next(
+                (f, k) for f, accs in CONFIG.get("accounts", {}).items() for k, a in accs.items()
+                if a["inst"] == inst and a["iban"] == iban
+            )
+        except StopIteration:
+            file_paths = tuple(CONFIG.get("accounts", {}).keys())
+            print()
+            print("Select gnucash file for {} (IBAN: {}):".format(acc_id, iban))
+            for i, p in enumerate(file_paths, 1):
+                print(" {} - {}".format(i, p))
+            print(" 0 - Enter new path")
+            selection = -1
+            while selection < 0 or selection > len(file_paths):
+                with suppress(ValueError):
+                    selection = int(input("> "))
+
+            if selection == 0:
+                file_path = input("Enter file path (e.g. ~/personal.gnucash): ")
+            else:
+                file_path = file_paths[selection - 1]
+
+            account = input("Enter GNUCash account (e.g. Assets.Current Account): ")
+
+            CONFIG.setdefault("accounts", {}).setdefault(file_path, {})[acc_id] = {
+                "date_key": "bookingDate",
+                "gc_account": account,
+                "iban": iban,
+                "inst": inst,
+            }
         else:
-            file_path = file_paths[selection - 1]
+            acc_config = CONFIG["accounts"][file_path].pop(old_acc_id)
+            CONFIG["accounts"][file_path][acc_id] = acc_config
 
-        account = input("Enter GNUCash account (e.g. Assets.Current Account): ")
-
-        CONFIG.setdefault("accounts", {}).setdefault(file_path, {})[acc_id] = (account, "bookingDate")
     CONFIG_PATH.write_text(json.dumps(CONFIG, sort_keys=True, indent=4))
 
 
