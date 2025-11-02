@@ -23,7 +23,7 @@ class Account:
     def GetSplitList(self) -> list[Split]:
         ...
 
-    def lookup_by_full_name(self, name: str) -> Account:
+    def lookup_by_full_name(self, name: str) -> Account | None:
         ...
 
 class Book:
