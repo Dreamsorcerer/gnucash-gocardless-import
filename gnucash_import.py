@@ -10,12 +10,16 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, NewType, TypedDict
 
 from aiohttp import ClientSession
-from gnucash import Session, Transaction, Split, GncNumeric
+from gnucash import (
+    ACCT_TYPE_PAYABLE, ACCT_TYPE_RECEIVABLE, ACCT_TYPE_TRADING,
+    Session, Transaction, Split, GncNumeric
+)
 
 try:
     from gi.repository import GLib
@@ -47,6 +51,14 @@ CONFIG_PATH = config_dir / "gnucash-import"
 CONFIG: Config = json.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else Config()
 DISABLE_LOGS = True
 UUID_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+# Account types we shouldn't create splits for.
+IGNORE_SPLIT_ACCOUNTS = frozenset((
+    # Receivable/payable should be created only by invoices.
+    ACCT_TYPE_RECEIVABLE, ACCT_TYPE_PAYABLE,
+    # Trading accounts should always be handled by GNUCash automatically.
+    ACCT_TYPE_TRADING
+))
 
 if DISABLE_LOGS:
     # Log files don't seem to respect user preferences.
@@ -175,6 +187,12 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
                 continue
             name = m.group(1)
             splits_by_name.setdefault(name, []).append(split)
+
+            # Some transactions have a unique value appended.
+            # This drops the value in order to allow matches to still work.
+            name = name.rpartition(" ")[0]
+            if name:
+                splits_by_name.setdefault(name, []).append(split)
         for splits in splits_by_name.values():
             splits.sort(key=lambda s: s.parent.GetDate())
 
@@ -228,23 +246,37 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
                 prev_tx = prev_split.parent
                 desc = prev_tx.GetDescription()
 
-                total = prev_split.GetAmount().to_double()
-                for other_split in filter(lambda s: s != prev_split, prev_split.parent.GetSplitList()):
+                # Create matching splits based on previous transaction.
+                for other_split in filter(lambda s: s != prev_split, prev_tx.GetSplitList()):
+                    other_account = other_split.GetAccount()
+                    # Skip splits to certain account types.
+                    if other_account.GetType() in IGNORE_SPLIT_ACCOUNTS:
+                        continue
                     new_split = Split(session.book)
-                    ratio = other_split.GetValue().to_double() / prev_split.GetAmount().to_double()
-                    new_split.SetValue(GncNumeric(float(tx_data["transactionAmount"]["amount"]) * ratio))
-                    new_split.SetAccount(other_split.GetAccount())
+                    ratio = other_split.GetValue().to_double() / prev_split.GetValue().to_double()
+                    split_value = float(tx_data["transactionAmount"]["amount"]) * ratio
+                    new_split.SetValue(GncNumeric(split_value))
+                    new_split.SetAccount(other_account)
                     new_split.SetParent(tx)
 
             tx.SetDescription(desc)
             tx.CommitEdit()
 
 
-async def import_transactions(sess: ClientSession) -> None:
+async def import_transactions(sess: ClientSession, update_pricedb: bool = True) -> None:
     balances, transactions = await download_transactions(sess)
 
     for f, accounts in CONFIG["accounts"].items():
-        with Session(str(Path(f).expanduser())) as session:
+        file_path = str(Path(f).expanduser())
+
+        if update_pricedb:
+            # Update price database before creating transactions.
+            p = await asyncio.create_subprocess_exec("gnucash-cli", "--quotes", "get", file_path)
+            await p.wait()
+            if p.returncode != 0:
+                raise RuntimeError("'gnucash-cli --quotes' failed. Fix or run with --no-update-pricedb")
+
+        with Session(file_path) as session:
             _import_transactions(session, accounts, transactions)
 
             for acc_id, acc in accounts.items():
@@ -378,12 +410,13 @@ async def fetch_token(sess: ClientSession, interactive: bool = True) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
+    parser.add_argument("--no-update-pricedb", action="store_false")
     args = parser.parse_args()
 
     f_map: dict[Mode, Callable[[ClientSession], Awaitable[None]]] = {
         Mode.register: register_account,
         Mode.token: fetch_token,
-        Mode.transactions: import_transactions,
+        Mode.transactions: partial(import_transactions, update_pricedb=args.no_update_pricedb),
     }
     headers = {"Accept": "application/json"}
     async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API

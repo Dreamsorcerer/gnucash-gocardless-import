@@ -1,6 +1,12 @@
 from datetime import date, datetime
 from types import TracebackType
-from typing import Literal, Self
+from typing import Literal, NewType, Self
+
+_AccType = NewType("_AccType", int)
+
+ACCT_TYPE_PAYABLE: _AccType
+ACCT_TYPE_RECEIVABLE: _AccType
+ACCT_TYPE_TRADING: _AccType
 
 class GncNumeric:
     def __init__(self, num: float):
@@ -21,6 +27,9 @@ class Account:
         ...
 
     def GetSplitList(self) -> list[Split]:
+        ...
+
+    def GetType(self) -> _AccType:
         ...
 
     def lookup_by_full_name(self, name: str) -> Account | None:
