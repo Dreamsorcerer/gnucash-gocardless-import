@@ -97,7 +97,7 @@ async def _reconfirm_account(sess: ClientSession, eua_id: str) -> None:
             print(await resp.text())
             raise RuntimeError()
         data = await resp.json()
-    print("Navigate to:", data["reconfirmation_url"])
+    print("Account connection needs renewing:", data["reconfirmation_url"])
 
     y = ""
     while y.lower().strip() != "y":
