@@ -262,17 +262,18 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
             tx.CommitEdit()
 
 
-async def import_transactions(sess: ClientSession) -> None:
+async def import_transactions(sess: ClientSession, update_pricedb: bool = True) -> None:
     balances, transactions = await download_transactions(sess)
 
     for f, accounts in CONFIG["accounts"].items():
         file_path = str(Path(f).expanduser())
 
-        # Update price database before creating transactions.
-        p = await asyncio.create_subprocess_exec("gnucash-cli", "--quotes", "get", file_path)
-        await p.wait()
-        if p.returncode != 0:
-            raise RuntimeError("'gnucash-cli --quotes' failed. Fix or run with --no-update-pricedb")
+        if update_pricedb:
+            # Update price database before creating transactions.
+            p = await asyncio.create_subprocess_exec("gnucash-cli", "--quotes", "get", file_path)
+            await p.wait()
+            if p.returncode != 0:
+                raise RuntimeError("'gnucash-cli --quotes' failed. Fix or run with --no-update-pricedb")
 
         with Session(file_path) as session:
             _import_transactions(session, accounts, transactions)
@@ -408,12 +409,13 @@ async def fetch_token(sess: ClientSession, interactive: bool = True) -> None:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
+    parser.add_argument("--no-update-pricedb", action="store_false")
     args = parser.parse_args()
 
     f_map: dict[Mode, Callable[[ClientSession], Awaitable[None]]] = {
         Mode.register: register_account,
         Mode.token: fetch_token,
-        Mode.transactions: import_transactions,
+        Mode.transactions: partial(import_transactions, update_pricedb=args.no_update_pricedb),
     }
     headers = {"Accept": "application/json"}
     async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API
