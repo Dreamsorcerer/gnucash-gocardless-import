@@ -205,8 +205,7 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
                 if note:
                     note += "; "
 
-                txname = desc
-                note += f"TXID: {tx_data['internalTransactionId']}; TXNAME: {txname};"
+                note += f"TXID: {tx_data['internalTransactionId']}; TXNAME: {desc};"
                 split.SetMemo(note)
                 split.parent.SetDate(tx_date.day, tx_date.month, tx_date.year)
                 continue
