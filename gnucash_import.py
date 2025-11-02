@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, NewType, TypedDict
