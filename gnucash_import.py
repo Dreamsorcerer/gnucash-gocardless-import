@@ -251,6 +251,7 @@ async def import_transactions(sess: ClientSession) -> None:
             for acc_id, acc in accounts.items():
                 amount = balances[acc_id]
                 gc_acc = session.book.get_root_account().lookup_by_full_name(acc["gc_account"])
+                assert gc_acc is not None
                 if not math.isclose(gc_acc.GetBalance().to_double(), amount):
                     print(f"{acc['gc_account']} balance out of sync, please reconcile.")
                     print(f"Expected: {amount}")
