@@ -76,8 +76,19 @@ class _Amount(TypedDict):
     currency: str
 
 
+class _InstructedAmount(TypedDict, total=False):
+    amount: float
+
+
+class _CurrencyExchange(TypedDict, total=False):
+    exchangeRate: str
+    # Undocumented, but present in Wise transactions.
+    instructedAmount: _InstructedAmount
+
+
 class TransactionData(TypedDict):
     bookingDate: str
+    currencyExchange: _CurrencyExchange
     internalTransactionId: str
     remittanceInformationUnstructured: str
     transactionAmount: _Amount
