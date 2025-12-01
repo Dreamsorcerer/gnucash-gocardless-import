@@ -259,6 +259,21 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
                     new_split.SetAccount(other_account)
                     new_split.SetParent(tx)
 
+                    # Handle currency conversion
+                    if tx.GetCurrency().get_unique_name() != other_account.GetCommodity().get_unique_name():
+                        xchange = tx_data.get("currencyExchange", {})
+                        # Use converted amount if present (e.g. Wise transfer).
+                        amount = xchange.get("instructedAmount", {}).get("amount")
+                        if not amount:
+                            rate = xchange.get("exchangeRate")
+                            if not rate:
+                                price = session.book.get_price_db().get_nearest_price(
+                                    tx.GetCurrency(), other_account.GetCommodity(), tx.GetDate())
+                                rate = price.num / price.denom
+                            amount = split_value * float(rate)
+
+                        new_split.SetAmount(GncNumeric(amount))
+
             tx.SetDescription(desc)
             tx.CommitEdit()
 
