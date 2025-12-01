@@ -8,6 +8,10 @@ ACCT_TYPE_PAYABLE: _AccType
 ACCT_TYPE_RECEIVABLE: _AccType
 ACCT_TYPE_TRADING: _AccType
 
+class _gnc_numeric:
+    denom: float
+    num: float
+
 class GncNumeric:
     def __init__(self, num: float):
         ...
@@ -16,14 +20,16 @@ class GncNumeric:
         ...
 
 class GncCommodity:
-    ...
+    def get_unique_name(self) -> str:
+        ...
 
 class GncCommodityTable:
     def lookup(self, commodity_type: Literal["CURRENCY"], symbol: str) -> GncCommodity:
         ...
 
 class GncPriceDB:
-    ...
+    def get_nearest_price(self, from: GncCommodity, to: GncCommodity, at: date) -> _gnc_numeric:
+        ...
 
 class Account:
     def GetBalance(self) -> GncNumeric:
