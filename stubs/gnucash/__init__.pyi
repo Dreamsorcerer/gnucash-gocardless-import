@@ -22,8 +22,14 @@ class GncCommodityTable:
     def lookup(self, commodity_type: Literal["CURRENCY"], symbol: str) -> GncCommodity:
         ...
 
+class GncPriceDB:
+    ...
+
 class Account:
     def GetBalance(self) -> GncNumeric:
+        ...
+
+    def GetCommodity(self) -> GncCommodity:
         ...
 
     def GetSplitList(self) -> list[Split]:
@@ -36,6 +42,9 @@ class Account:
         ...
 
 class Book:
+    def get_price_db(self) -> GncPriceDB:
+        ...
+
     def get_root_account(self) -> Account:
         ...
 
@@ -73,6 +82,9 @@ class Transaction:
     def GetSplitList(self) -> list[Split]:
         ...
 
+    def GetCurrency(self) -> GncCommodity:
+        ...
+
     def SetCurrency(self, curr: GncCommodity) -> None:
         ...
 
@@ -101,6 +113,9 @@ class Split:
         ...
 
     def SetAccount(self, account: Account) -> None:
+        ...
+
+    def SetAmount(self, amount: GncNumeric) -> None:
         ...
 
     def SetMemo(self, memo: str) -> None:
