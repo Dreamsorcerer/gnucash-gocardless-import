@@ -276,7 +276,7 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
                         # Use converted amount if present (e.g. Wise transfer).
                         amount = xchange.get("instructedAmount", {}).get("amount")
                         if not amount:
-                            rate = xchange.get("exchangeRate")
+                            rate: str | float = xchange.get("exchangeRate")
                             if not rate:
                                 price = session.book.get_price_db().get_nearest_price(
                                     tx.GetCurrency(), other_account.GetCommodity(), tx.GetDate())
