@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 5
     steps:
     - name: Checkout
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
     - name: Disable man-db to speed up apt
       run: |
         echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
