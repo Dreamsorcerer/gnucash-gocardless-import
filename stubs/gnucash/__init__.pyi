@@ -28,7 +28,7 @@ class GncCommodityTable:
         ...
 
 class GncPriceDB:
-    def get_nearest_price(self, from_curr: GncCommodity, to_curr: GncCommodity, at: date) -> _gnc_numeric:
+    def get_nearest_price(self, orig_currency: GncCommodity, new_currency: GncCommodity, t: date) -> _gnc_numeric:
         ...
 
 class Account:
