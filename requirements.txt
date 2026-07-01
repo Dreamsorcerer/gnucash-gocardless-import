@@ -1,4 +1,4 @@
 aiohttp==3.14.1
 mypy==2.1.0
-PyGObject==3.50.0
+PyGObject==3.56.3
 PyGObject-stubs==2.16.0
