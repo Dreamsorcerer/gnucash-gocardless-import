@@ -15,7 +15,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, NewType, TypedDict
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, ClientTimeout
 from gnucash import (
     ACCT_TYPE_PAYABLE, ACCT_TYPE_RECEIVABLE, ACCT_TYPE_TRADING,
     Session, Transaction, Split, GncNumeric
@@ -463,7 +463,9 @@ async def main() -> None:
         Mode.transactions: partial(import_transactions, update_pricedb=args.no_update_pricedb),
     }
     headers = {"Accept": "application/json"}
-    async with ClientSession(headers=headers) as sess:  # TODO(3.11): base_url=API
+    # Long timeout in case there are open requests while waiting for user to confirm.
+    timeout = ClientTimeout(total=1800)
+    async with ClientSession(headers=headers, timeout=timeout) as sess:  # TODO(3.11): base_url=API
         await f_map[args.mode](sess)
 
 
