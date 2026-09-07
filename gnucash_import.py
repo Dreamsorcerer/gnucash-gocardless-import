@@ -180,6 +180,18 @@ async def download_transactions(sess: ClientSession) -> tuple[dict[AccId, float]
     return balances, transaction_data
 
 
+def get_shorter_name(name: str) -> str | None:
+    # Some transactions have a unique value appended.
+    # This drops the value in order to allow matches to still work.
+    # Some transactions have the value after space, others after *.
+    # And Wise adds fees to the end of the name "tx name (fee: xx.xx USD)".
+    i = max(name.rfind(" "), name.rfind("*"))
+    paren = name.rfind("(")
+    if paren > 0:
+        i = min(i, paren)
+    return name[:i] if i > 0 else None
+
+
 def _import_transactions(session: Session, accounts: dict[AccId, AccountData], transactions: dict[AccId, TransactionsGroup]) -> None:
     root = session.book.get_root_account()
     for acc_id, acc in accounts.items():
@@ -199,11 +211,9 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
             name = m.group(1)
             splits_by_name.setdefault(name, []).append(split)
 
-            # Some transactions have a unique value appended.
-            # This drops the value in order to allow matches to still work.
-            name = name.rpartition(" ")[0]
-            if name:
-                splits_by_name.setdefault(name, []).append(split)
+            shorter_name = get_shorter_name(name)
+            if shorter_name:
+                splits_by_name.setdefault(shorter_name, []).append(split)
         for splits in splits_by_name.values():
             splits.sort(key=lambda s: s.parent.GetDate())
 
@@ -251,7 +261,15 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
             new_split.SetParent(tx)
             new_split.SetMemo(f"TXID: {tx_data['internalTransactionId']}; TXNAME: {desc};")
 
-            prev_splits = splits_by_name.get(tx_data["remittanceInformationUnstructured"])
+            name = tx_data["remittanceInformationUnstructured"]
+
+            prev_splits = splits_by_name.get(name)
+            if not prev_splits:
+                # Try stripping any unique value from the end as a fallback search.
+                shorter_name = get_shorter_name(name)
+                if shorter_name:
+                    prev_splits = splits_by_name.get(shorter_name)
+
             if prev_splits:
                 prev_split = prev_splits[-1]
                 prev_tx = prev_split.parent
