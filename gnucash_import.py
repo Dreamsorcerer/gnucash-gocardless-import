@@ -127,7 +127,7 @@ async def _reconfirm_account(sess: ClientSession, eua_id: str) -> None:
         y = input("Enter 'y' when complete: ")
 
 
-async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, float, TransactionsGroup]:
+async def _download_account(sess: ClientSession, acc_id: AccId, acc: AccountData) -> tuple[AccId, float, TransactionsGroup]:
     for retry in range(2):
         async with sess.get(API + f"accounts/{acc_id}/balances/") as resp:
             if retry == 0 and resp.status == 401:
@@ -136,9 +136,11 @@ async def _download_account(sess: ClientSession, acc_id: AccId) -> tuple[AccId, 
                 if eua_id:
                     await _reconfirm_account(sess, eua_id.group(0))
                     continue
+                else:
+                    acc_id = await _register_account(sess, acc["inst"])
 
             if not resp.ok:
-                print("Response status:", resp.status)
+                print("Response status:", resp.status, acc_id)
                 print(await resp.text())
                 raise RuntimeError()
             data = await resp.json()
@@ -170,7 +172,7 @@ async def download_transactions(sess: ClientSession) -> tuple[dict[AccId, float]
     tasks = []
     for f, accounts in CONFIG["accounts"].items():
         for acc_id in accounts:
-            tasks.append(_download_account(sess, acc_id))
+            tasks.append(_download_account(sess, acc_id, accounts[acc_id]))
 
     balances = {}
     transaction_data = {}
@@ -332,23 +334,7 @@ async def import_transactions(sess: ClientSession, update_pricedb: bool = True) 
                     print(f"Expected: {amount}")
 
 
-async def register_account(sess: ClientSession) -> None:
-    country = ""
-    while len(country) != 2:
-        country = input("Country code (default: GB): ") or "GB"
-
-    await refresh(sess)
-
-    async with sess.get(API + "institutions/", params={"country": country}) as resp:
-        if not resp.ok:
-            print("Response status:", resp.status)
-            print(await resp.text())
-            raise RuntimeError()
-        data = await resp.json()
-        for b in data:
-            print(f"{b['id']}: {b['name']}")
-
-    inst_id = input("Institution ID: ")
+async def _register_account(sess: ClientSession, inst_id: str) -> AccId:
     r = {"access_valid_for_days": "730", "institution_id": inst_id, "reconfirmation": True}
     async with sess.post(API + "agreements/enduser/", json=r) as resp:
         if not resp.ok:
@@ -425,6 +411,28 @@ async def register_account(sess: ClientSession) -> None:
             CONFIG["accounts"][file_path][acc_id] = acc_config
 
     CONFIG_PATH.write_text(json.dumps(CONFIG, sort_keys=True, indent=4))
+    return acc_id
+
+
+async def register_account(sess: ClientSession) -> None:
+    country = ""
+    while len(country) != 2:
+        country = input("Country code (default: GB): ") or "GB"
+
+    await refresh(sess)
+
+    async with sess.get(API + "institutions/", params={"country": country}) as resp:
+        if not resp.ok:
+            print("Response status:", resp.status)
+            print(await resp.text())
+            raise RuntimeError()
+        data = await resp.json()
+        for b in data:
+            print(f"{b['id']}: {b['name']}")
+
+    inst_id = input("Institution ID: ")
+
+    await _register_account(sess, inst_id)
 
 
 async def fetch_token(sess: ClientSession, interactive: bool = True) -> None:
