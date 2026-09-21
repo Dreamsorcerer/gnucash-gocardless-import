@@ -57,8 +57,13 @@ class Book:
     def get_table(self) -> GncCommodityTable:
         ...
 
+class _SwigPointer:
+    def __int__(self) -> int:
+        ...
+
 class Session:
     book: Book
+    instance: _SwigPointer
 
     def __init__(self, path: str):
         ...

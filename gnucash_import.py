@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import ctypes
 import json
 import math
 import os
@@ -10,7 +11,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import Enum
-from functools import partial
+from functools import cache, partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, NewType, TypedDict
@@ -98,6 +99,116 @@ class TransactionData(TypedDict):
 class TransactionsGroup(TypedDict):
     booked: list[TransactionData]
     pending: list[TransactionData]
+
+
+class _GList(ctypes.Structure):
+    """Mirror of GLib's GList struct."""
+    data: "int | None"
+    next: "ctypes._Pointer[_GList]"
+
+
+_GList._fields_ = [("data", ctypes.c_void_p), ("next", ctypes.POINTER(_GList)),
+                   ("prev", ctypes.POINTER(_GList))]
+
+
+def _load_sx_library() -> ctypes.CDLL:
+    """Find the GnuCash library implementing scheduled transactions.
+
+    GnuCash <5 has this in app-utils, which is already loaded as a dependency
+    of the Python bindings. GnuCash 5+ split it into libgnc-expressions, which
+    lives in GnuCash's private lib directory, so find that one via the
+    location of an already loaded GnuCash library.
+    """
+    for name in ("libgnc-app-utils.so", "libgncmod-app-utils.so", "libgnc-expressions.so"):
+        with suppress(OSError):
+            lib = ctypes.CDLL(name)
+            if hasattr(lib, "gnc_sx_get_current_instances"):
+                return lib
+    with open("/proc/self/maps") as f:
+        for line in f:
+            if "libgnc-engine" in line:
+                libdir = line.split(maxsplit=5)[5].strip().rsplit("/", 1)[0]
+                return ctypes.CDLL(f"{libdir}/libgnc-expressions.so")
+    raise OSError("scheduled transactions library not found")
+
+
+@cache
+def _init_guile() -> None:
+    """Initialise Guile, which the scheduled transactions formula parser calls into."""
+    with open("/proc/self/maps") as f:
+        path = next((line.split(maxsplit=5)[5].strip() for line in f if "libguile-" in line), None)
+    if path is None:  # GnuCash build without Guile, nothing to initialise.
+        return
+    # Apply GnuCash's environment file (/etc/gnucash/environment) so Guile can
+    # find GnuCash's Scheme files (fin.scm) on distros that don't install them
+    # into Guile's default site directory.
+    with suppress(ImportError, AttributeError):
+        from gnucash import sw_core_utils
+        sw_core_utils.gnc_environment_setup()
+    guile = ctypes.CDLL(path)
+    guile.scm_init_guile.argtypes = ()
+    guile.scm_init_guile.restype = None
+    guile.scm_init_guile()
+
+
+def _create_scheduled_transactions(session: Session) -> None:
+    """Create transactions that are due from scheduled transactions."""
+    try:
+        sx_lib = _load_sx_library()
+    except OSError as e:
+        print(f"WARNING: Unable to create scheduled transactions ({e}).")
+        return
+
+    _init_guile()
+    glib = ctypes.CDLL("libglib-2.0.so.0")
+    gobject = ctypes.CDLL("libgobject-2.0.so.0")
+    engine = ctypes.CDLL("libgnc-engine.so")
+
+    engine.gnc_set_current_session.argtypes = (ctypes.c_void_p,)
+    engine.gnc_set_current_session.restype = None
+    glib.g_free.argtypes = (ctypes.c_void_p,)
+    glib.g_free.restype = None
+    glib.g_list_free.argtypes = (ctypes.POINTER(_GList),)
+    glib.g_list_free.restype = None
+    glib.g_list_length.argtypes = (ctypes.POINTER(_GList),)
+    glib.g_list_length.restype = ctypes.c_uint
+    gobject.g_object_unref.argtypes = (ctypes.c_void_p,)
+    gobject.g_object_unref.restype = None
+    sx_lib.gnc_sx_get_current_instances.argtypes = ()
+    sx_lib.gnc_sx_get_current_instances.restype = ctypes.c_void_p
+    sx_lib.gnc_sx_instance_model_effect_change.argtypes = (
+        ctypes.c_void_p, ctypes.c_int,
+        ctypes.POINTER(ctypes.POINTER(_GList)), ctypes.POINTER(ctypes.POINTER(_GList)))
+    sx_lib.gnc_sx_instance_model_effect_change.restype = None
+
+    # The SX code works on the global current session, which the bindings don't set.
+    engine.gnc_set_current_session(int(session.instance))
+    try:
+        model = sx_lib.gnc_sx_get_current_instances()
+        try:
+            created = ctypes.POINTER(_GList)()
+            errors = ctypes.POINTER(_GList)()
+            # Create all due instances, not just auto-create ones (like clicking
+            # OK in the 'Since Last Run' window). Also updates the scheduled
+            # transactions' state, so GnuCash won't create them again on open.
+            sx_lib.gnc_sx_instance_model_effect_change(
+                model, 0, ctypes.byref(created), ctypes.byref(errors))
+            if created:
+                print(f"Created {glib.g_list_length(created)} scheduled transaction(s).")
+                glib.g_list_free(created)
+            node = errors
+            while node:
+                if node.contents.data:
+                    msg = ctypes.cast(node.contents.data, ctypes.c_char_p).value or b""
+                    print(f"ERROR: Creating scheduled transaction: {msg.decode(errors='replace')}")
+                    glib.g_free(node.contents.data)
+                node = node.contents.next
+            if errors:
+                glib.g_list_free(errors)
+        finally:
+            gobject.g_object_unref(model)
+    finally:
+        engine.gnc_set_current_session(None)
 
 
 async def refresh(sess: ClientSession) -> None:
@@ -307,7 +418,8 @@ def _import_transactions(session: Session, accounts: dict[AccId, AccountData], t
             tx.CommitEdit()
 
 
-async def import_transactions(sess: ClientSession, update_pricedb: bool = True) -> None:
+async def import_transactions(sess: ClientSession, update_pricedb: bool = True,
+                              create_scheduled: bool = True) -> None:
     balances, transactions = await download_transactions(sess)
 
     for f, accounts in CONFIG["accounts"].items():
@@ -321,6 +433,8 @@ async def import_transactions(sess: ClientSession, update_pricedb: bool = True) 
                 raise RuntimeError("'gnucash-cli --quotes' failed. Fix or run with --no-update-pricedb")
 
         with Session(file_path) as session:
+            if create_scheduled:
+                _create_scheduled_transactions(session)
             _import_transactions(session, accounts, transactions)
 
             for acc_id, acc in accounts.items():
@@ -455,12 +569,14 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--mode", type=Mode, default=Mode.transactions)
     parser.add_argument("--no-update-pricedb", action="store_false")
+    parser.add_argument("--no-scheduled-transactions", action="store_false")
     args = parser.parse_args()
 
     f_map: dict[Mode, Callable[[ClientSession], Awaitable[None]]] = {
         Mode.register: register_account,
         Mode.token: fetch_token,
-        Mode.transactions: partial(import_transactions, update_pricedb=args.no_update_pricedb),
+        Mode.transactions: partial(import_transactions, update_pricedb=args.no_update_pricedb,
+                                   create_scheduled=args.no_scheduled_transactions),
     }
     headers = {"Accept": "application/json"}
     # Long timeout in case there are open requests while waiting for user to confirm.
