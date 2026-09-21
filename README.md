@@ -46,6 +46,11 @@ Follow the instructions to specify the GnuCash file and account name that transa
 Once accounts are setup, you can import transactions by running `./gnucash_import.py`. This will fetch all
 the transactions for all the accounts and create them in the respective GnuCash accounts.
 
+Before importing, scheduled transactions are created first to avoid duplicate transactions being created.
+Finance Quote is also executed to update the price DB, saving you from needing to click the fetch button later
+(transactions with currency conversion will then use these rates from the price DB).
+Use `--no-scheduled-transactions` and `--no-update-pricedb` to disable this behaviour.
+
 The script will attempt to find already existing transactions that match the transaction, so manually created
 transactions will get linked correctly most of the time. Previously existing transactions will also get
 marked as reconciled as long as the amounts still match correctly.
